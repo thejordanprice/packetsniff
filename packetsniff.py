@@ -36,7 +36,17 @@ def process_packet(packet):
             icmp_layer = packet.getlayer(ICMP)
             print(f"   [ICMP] Type: {icmp_layer.type}, Code: {icmp_layer.code}")
 
-        print(f"   [Raw] {bytes(packet[IP]).hex()}")
+        raw_layer = packet.getlayer(Raw)
+        if raw_layer:
+            raw_data = raw_layer.load
+            try:
+                decoded_data = raw_data.decode("utf-8", errors="ignore")
+                print(f".  [Raw] {raw_data.hex()}")
+                print(f"   [Decoded] {decoded_data}")
+            except UnicodeDecodeError:
+                print(f"   [Raw] {raw_data.hex()}")
+        else:
+            print("   [Raw] No raw layer found")
 
 def start_sniffing(interface):
     print(f"Sniffing on interface: {interface}")
