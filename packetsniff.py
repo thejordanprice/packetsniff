@@ -1,6 +1,7 @@
 import threading
 from scapy.all import sniff, get_if_list, IP, TCP, UDP, ICMP, Raw, DNS
 from datetime import datetime
+import zlib
 
 packet_counts = {'TCP': 0, 'UDP': 0, 'ICMP': 0, 'HTTP': 0, 'DNS': 0}
 
@@ -76,12 +77,22 @@ def process_packet(packet):
             # Check if the packet has a Raw layer
             raw_layer = packet.getlayer(Raw)
             if raw_layer:
-                if b'HTTP' in raw_layer.load:
+                raw_data = raw_layer.load
+                if b'HTTP' in raw_data:
                     packet_counts['HTTP'] += 1
                     try:
-                        http_payload = raw_layer.load.decode('utf-8')
+                        http_payload = raw_data.decode('utf-8')
                     except UnicodeDecodeError:
-                        http_payload = raw_layer.load.decode('latin-1')
+                        http_payload = raw_data.decode('latin-1')
+
+                    # Check if the response is gzip compressed
+                    if b'Content-Encoding: gzip' in raw_data:
+                        try:
+                            decompressed_data = zlib.decompress(http_payload, 16+zlib.MAX_WBITS)
+                            http_payload = decompressed_data.decode('utf-8')
+                        except zlib.error:
+                            http_payload = "[Gzip Decompression Error]"
+
                     print(f"   [HTTP Payload]:\n{http_payload}")
 
         elif packet.haslayer(UDP):
@@ -96,12 +107,6 @@ def process_packet(packet):
         elif packet.haslayer(ICMP):
             icmp_layer = packet.getlayer(ICMP)
             print(f"   [ICMP] Type: {icmp_layer.type}, Code: {icmp_layer.code}")
-
-        # Print raw packet data
-        raw_layer = packet.getlayer(Raw)
-        if raw_layer:
-            raw_data = raw_layer.load
-            print(f"   [Raw] {raw_data.hex()}")
 
 def start_sniffing(interface):
     print(f"\nSniffing on interface: {interface}")
