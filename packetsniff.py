@@ -1,5 +1,8 @@
 import threading
-from scapy.all import sniff, get_if_list, IP, TCP, UDP, ICMP, Raw
+from scapy.all import sniff, get_if_list, IP, TCP, UDP, ICMP, Raw, DNS
+from datetime import datetime
+
+packet_counts = {'TCP': 0, 'UDP': 0, 'ICMP': 0, 'HTTP': 0, 'DNS': 0}
 
 def main():
     print("Available interfaces:")
@@ -13,47 +16,95 @@ def main():
         if 0 <= interface_index < len(interfaces):
             interface = interfaces[interface_index]
             start_sniffing(interface)
+            # Keep the main thread alive until the user decides to exit
+            while True:
+                pass
         else:
             print("Invalid interface number.")
     except ValueError:
         print("Invalid input. Please enter a number.")
 
 def process_packet(packet):
-    if packet.haslayer(IP):
-        ip_layer = packet.getlayer(IP)
-        print(f"\n[+] New Packet: {ip_layer.src} -> {ip_layer.dst}")
+    global packet_counts
 
+    if packet.haslayer(IP):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n{timestamp}")
+        
+        ip_layer = packet.getlayer(IP)
+        protocol = "Unknown"
+        if ip_layer.proto == 1:
+            protocol = "ICMP"
+        elif ip_layer.proto == 6:
+            protocol = "TCP"
+        elif ip_layer.proto == 17:
+            protocol = "UDP"
+        elif ip_layer.proto == 47:
+            protocol = "GRE"
+        elif ip_layer.proto == 50:
+            protocol = "ESP"
+        elif ip_layer.proto == 51:
+            protocol = "AH"
+        elif ip_layer.proto == 89:
+            protocol = "OSPF"
+        elif ip_layer.proto == 132:
+            protocol = "SCTP"
+        else:
+            protocol = f"Unknown ({ip_layer.proto})"
+
+        print(f" [+] New Packet: {ip_layer.src} -> {ip_layer.dst}, Protocol: {protocol}, Length: {len(packet)}")
+        packet_counts[protocol] += 1
+
+        # Handle specific protocol types
         if packet.haslayer(TCP):
             tcp_layer = packet.getlayer(TCP)
-            print(f"   [TCP] {tcp_layer.sport} -> {tcp_layer.dport}")
-            print(f"   [Flags] SYN: {tcp_layer.flags & 0x02}, ACK: {tcp_layer.flags & 0x10}, PSH: {tcp_layer.flags & 0x08}, RST: {tcp_layer.flags & 0x04}, FIN: {tcp_layer.flags & 0x01}")
+            flags = []
+            if tcp_layer.flags & 0x01:
+                flags.append("FIN")
+            if tcp_layer.flags & 0x02:
+                flags.append("SYN")
+            if tcp_layer.flags & 0x04:
+                flags.append("RST")
+            if tcp_layer.flags & 0x08:
+                flags.append("PSH")
+            if tcp_layer.flags & 0x10:
+                flags.append("ACK")
+            if tcp_layer.flags & 0x20:
+                flags.append("URG")
+            print(f"   [TCP] {tcp_layer.sport} -> {tcp_layer.dport}, Flags: {', '.join(flags)}")
+
+            if tcp_layer.dport == 80 or tcp_layer.sport == 80:
+                packet_counts['HTTP'] += 1
+                try:
+                    http_payload = packet.getlayer(Raw).load.decode('utf-8')
+                except UnicodeDecodeError:
+                    http_payload = packet.getlayer(Raw).load.decode('latin-1')
+                print(f"   [HTTP Payload]:\n{http_payload}")
 
         elif packet.haslayer(UDP):
             udp_layer = packet.getlayer(UDP)
             print(f"   [UDP] {udp_layer.sport} -> {udp_layer.dport}")
 
+            if udp_layer.dport == 53 or udp_layer.sport == 53:
+                packet_counts['DNS'] += 1
+                dns_payload = packet.getlayer(DNS).summary()
+                print(f"   [DNS Query]:\n{dns_payload}")
+
         elif packet.haslayer(ICMP):
             icmp_layer = packet.getlayer(ICMP)
             print(f"   [ICMP] Type: {icmp_layer.type}, Code: {icmp_layer.code}")
 
+        # Print raw packet data
         raw_layer = packet.getlayer(Raw)
         if raw_layer:
             raw_data = raw_layer.load
-            try:
-                decoded_data = raw_data.decode("utf-8", errors="ignore")
-                print(f".  [Raw] {raw_data.hex()}")
-                print(f"   [Decoded] {decoded_data}")
-            except UnicodeDecodeError:
-                print(f"   [Raw] {raw_data.hex()}")
-        else:
-            print("   [Raw] No raw layer found")
+            print(f"   [Raw] {raw_data.hex()}")
 
 def start_sniffing(interface):
-    print(f"Sniffing on interface: {interface}")
+    print(f"\nSniffing on interface: {interface}")
     sniff_thread = threading.Thread(target=sniff_packets, args=(interface,))
     sniff_thread.daemon = True
     sniff_thread.start()
-    sniff_thread.join()
 
 def sniff_packets(interface):
     sniff(iface=interface, prn=process_packet, store=False)
