@@ -32,6 +32,7 @@ def process_packet(packet):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{timestamp}")
         
+        # Flag packets by IP layer protocol type
         ip_layer = packet.getlayer(IP)
         protocol = "Unknown"
         if ip_layer.proto == 1:
@@ -80,18 +81,20 @@ def process_packet(packet):
                 raw_data = raw_layer.load
                 if b'HTTP' in raw_data:
                     packet_counts['HTTP'] += 1
-                    try:
-                        http_payload = raw_data.decode('utf-8')
-                    except UnicodeDecodeError:
-                        http_payload = raw_data.decode('latin-1')
+                    http_payload = raw_data
 
                     # Check if the response is gzip compressed
                     if b'Content-Encoding: gzip' in raw_data:
                         try:
-                            decompressed_data = zlib.decompress(http_payload, 16+zlib.MAX_WBITS)
-                            http_payload = decompressed_data.decode('utf-8')
+                            http_payload = zlib.decompress(http_payload, 16+zlib.MAX_WBITS)
                         except zlib.error:
-                            http_payload = "[Gzip Decompression Error]"
+                            print("[Gzip Decompression Error]")
+                            return
+
+                    try:
+                        http_payload = http_payload.decode('utf-8')
+                    except UnicodeDecodeError:
+                        http_payload = http_payload.decode('latin-1')
 
                     print(f"   [HTTP Payload]:\n{http_payload}")
 
