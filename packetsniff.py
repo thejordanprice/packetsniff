@@ -75,11 +75,13 @@ def process_packet(packet):
 
             if tcp_layer.dport == 80 or tcp_layer.sport == 80:
                 packet_counts['HTTP'] += 1
-                try:
-                    http_payload = packet.getlayer(Raw).load.decode('utf-8')
-                except UnicodeDecodeError:
-                    http_payload = packet.getlayer(Raw).load.decode('latin-1')
-                print(f"   [HTTP Payload]:\n{http_payload}")
+                raw_layer = packet.getlayer(Raw)
+                if raw_layer:
+                    try:
+                        http_payload = raw_layer.load.decode('utf-8')
+                    except UnicodeDecodeError:
+                        http_payload = raw_layer.load.decode('latin-1')
+                    print(f"   [HTTP Payload]:\n{http_payload}")
 
         elif packet.haslayer(UDP):
             udp_layer = packet.getlayer(UDP)
