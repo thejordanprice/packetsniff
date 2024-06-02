@@ -73,10 +73,11 @@ def process_packet(packet):
                 flags.append("URG")
             print(f"   [TCP] {tcp_layer.sport} -> {tcp_layer.dport}, Flags: {', '.join(flags)}")
 
-            if tcp_layer.dport == 80 or tcp_layer.sport == 80:
-                packet_counts['HTTP'] += 1
-                raw_layer = packet.getlayer(Raw)
-                if raw_layer:
+            # Check if the packet has a Raw layer
+            raw_layer = packet.getlayer(Raw)
+            if raw_layer:
+                if b'HTTP' in raw_layer.load:
+                    packet_counts['HTTP'] += 1
                     try:
                         http_payload = raw_layer.load.decode('utf-8')
                     except UnicodeDecodeError:
